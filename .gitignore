@@ -221,3 +221,4 @@ tags
 # Persistent undo
 [._]*.un~
 
+domain.*
