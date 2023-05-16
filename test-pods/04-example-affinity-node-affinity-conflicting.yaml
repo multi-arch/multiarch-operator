@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  generateName: node-affinity-conflict-
+  labels:
+    app: httpd
+  namespace: openshift-multiarch-operator
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                  - arm64
+  containers:
+    - name: httpd
+      image: 'image-registry.openshift-image-registry.svc:5000/openshift/httpd:latest'
+      ports:
+        - containerPort: 8080
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
