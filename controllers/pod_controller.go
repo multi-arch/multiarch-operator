@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/klog/v2"
 
 	corev1 "k8s.io/api/core/v1"
@@ -69,6 +68,14 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	klog.Infof("Processing pod %s/%s", pod.Namespace, pod.Name)
 	// The scheduling gate is found.
 	var err error
+	// TODO: this should be removed or done better (watch on non controlplane namespaces or opt-in by annotation)
+	if pod.Namespace != "openshift-multiarch-operator" {
+		// Remove the scheduling gate
+		klog.Infof("Reomving the scheduling gate from pod %s/%s", pod.Namespace, pod.Name)
+		removeSchedulingGate(pod)
+		return ctrl.Result{}, nil
+	}
+
 	// Prepare the requirement for the node affinity.
 	architectureRequirement, err := prepareRequirement(ctx, pod)
 	if err != nil {
@@ -84,16 +91,9 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	// Remove the scheduling gate
-	// klog.Infof("Reomving the scheduling gate from pod %s/%s", pod.Namespace, pod.Name)
-	// removeSchedulingGate(pod)
+	klog.Infof("Reomving the scheduling gate from pod %s/%s", pod.Namespace, pod.Name)
+	removeSchedulingGate(pod)
 
-	jsonData, err := json.Marshal(pod)
-	if err != nil {
-		fmt.Println("Error marshaling resource:", err)
-	}
-
-	// Print the JSON data
-	fmt.Println(string(jsonData))
 	err = r.Client.Update(ctx, pod)
 	if err != nil {
 		klog.Errorf("unable to update the pod %s/%s: %v", pod.Namespace, pod.Name, err)
@@ -106,7 +106,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 func prepareRequirement(ctx context.Context, pod *corev1.Pod) (corev1.NodeSelectorRequirement, error) {
 	// TODO: inspect the images in the pod spec to infer the values
 	return corev1.NodeSelectorRequirement{
-		Key:      "kubernetes.io/architecture",
+		Key:      "kubernetes.io/arch",
 		Operator: corev1.NodeSelectorOpIn,
 		Values:   []string{"amd64", "arm64", "s390x", "ppc64le"},
 	}, nil
@@ -117,7 +117,7 @@ func prepareRequirement(ctx context.Context, pod *corev1.Pod) (corev1.NodeSelect
 func setPodNodeAffinityRequirement(ctx context.Context, pod *corev1.Pod,
 	requirement corev1.NodeSelectorRequirement) error {
 	// We are ignoring the podSpec.nodeSelector field,
-	// TODO: validate this is ok when a pod has both nodeSelector and (our) nodeAffinity.
+	// TODO: validate this is ok when a pod has both nodeSelector and (our) nodeAffinity
 	if pod.Spec.Affinity == nil {
 		pod.Spec.Affinity = &corev1.Affinity{}
 	}
@@ -136,25 +136,28 @@ func setPodNodeAffinityRequirement(ctx context.Context, pod *corev1.Pod,
 	nodeSelectorTerms := pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms
 	// The expressions within the nodeSelectorTerms are ANDed.
 	// Therefore, we iterate over the nodeSelectorTerms and add an expression to each of the terms to verify the
-	// kubernetes.io/architecture label has compatible values.
+	// kubernetes.io/arch label has compatible values.
 	// Note that the NodeSelectorTerms will always be long at least 1, because we (re-)created it with size 1 above if it was nil (or having 0 length).
+	var skipMatchExpressionPatch bool
 	for i := range nodeSelectorTerms {
+		skipMatchExpressionPatch = false
 		if nodeSelectorTerms[i].MatchExpressions == nil {
 			nodeSelectorTerms[i].MatchExpressions = make([]corev1.NodeSelectorRequirement, 0, 1)
 		}
-		// Check if the nodeSelectorTerm already has a matchExpression for the kubernetes.io/architecture label.
+		// Check if the nodeSelectorTerm already has a matchExpression for the kubernetes.io/arch label.
 		// if yes, we ignore to add it.
 		for _, expression := range nodeSelectorTerms[i].MatchExpressions {
 			if expression.Key == requirement.Key {
-				klog.V(4).Infof("a nodeSelectorTerm already has the matchExpression for the kubernetes.io/architecture label. Ignoring...")
-				continue
+				klog.V(4).Infof("the current nodeSelectorTerm already has a matchExpression for the kubernetes.io/arch label. Ignoring...")
+				skipMatchExpressionPatch = true
+				break
 			}
 		}
-		// When reaching here, we know that the nodeSelectorTerm does not have the matchExpression for the kubernetes.io/architecture label.
-		// We add it.
-		nodeSelectorTerms[i].MatchExpressions = append(nodeSelectorTerms[i].MatchExpressions, requirement)
-		fmt.Println(nodeSelectorTerms[i])
-
+		// if skipMatchExpressionPatch is true, we skip to add the matchExpression so that conflictual matchExpressions provided by the user are not overwritten.
+		if !skipMatchExpressionPatch {
+			nodeSelectorTerms[i].MatchExpressions = append(nodeSelectorTerms[i].MatchExpressions, requirement)
+		}
+		fmt.Printf("%+v", nodeSelectorTerms[i])
 	}
 	return nil
 }

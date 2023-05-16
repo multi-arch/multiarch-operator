@@ -44,6 +44,10 @@ func (a *PodSchedulingGateMutatingWebHook) Handle(ctx context.Context, req admis
 	}
 	pod.Spec.SchedulingGates = append(pod.Spec.SchedulingGates, schedulingGate)
 
+	if pod.Spec.Affinity == nil {
+		pod.Spec.Affinity = &corev1.Affinity{}
+		// fix a bug in the kube-apiserver validation API
+	}
 	marshaledPod, err := json.Marshal(pod)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
