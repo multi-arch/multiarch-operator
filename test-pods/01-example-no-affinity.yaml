@@ -7,7 +7,7 @@ metadata:
   annotations:
     result: "This pod should get an affinity set, but the apiserver does not validate it as the initial affinity is nil."
     fail: "yes"
-  namespace: openshift-multiarch-operator
+  namespace: multiarch
 spec:
   securityContext:
     runAsNonRoot: true

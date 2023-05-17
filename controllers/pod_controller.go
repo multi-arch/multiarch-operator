@@ -69,12 +69,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// The scheduling gate is found.
 	var err error
 	// TODO: this should be removed or done better (watch on non controlplane namespaces or opt-in by annotation)
-	if pod.Namespace != "openshift-multiarch-operator" {
+	/*if pod.Namespace != "openshift-multiarch-operator" {
 		// Remove the scheduling gate
 		klog.Infof("Reomving the scheduling gate from pod %s/%s", pod.Namespace, pod.Name)
 		removeSchedulingGate(pod)
 		return ctrl.Result{}, nil
-	}
+	}*/
 
 	// Prepare the requirement for the node affinity.
 	architectureRequirement, err := prepareRequirement(ctx, pod)

@@ -4,7 +4,7 @@ metadata:
   generateName: example-no-node-affinity-
   labels:
     app: httpd
-  namespace: openshift-multiarch-operator
+  namespace: multiarch
   annotations:
     result: "This pod get the affinity update from the controller. This affinity is just set to be an empty map at the beginning."
 spec:
