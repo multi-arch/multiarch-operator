@@ -17,9 +17,11 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"k8s.io/klog/v2"
 	"os"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -31,6 +33,10 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -72,13 +78,63 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	id, err := os.Hostname()
+	if err != nil {
+		setupLog.Error(err, "error getting hostname", "controller", "Pod")
+		os.Exit(1)
+	}
+	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{},
+	)
+	namespace, _, err := kubeconfig.Namespace()
+	if err != nil {
+		setupLog.Error(err, "could not obtain a namespace to use for the leader election lock", "controller", id)
+		os.Exit(1)
+	}
+	config := ctrl.GetConfigOrDie()
+	leClientSet := kubernetes.NewForConfigOrDie(rest.AddUserAgent(config, "leader-election"))
 
+	// Lock required for leader election
+	rl, err := resourcelock.New(resourcelock.ConfigMapsLeasesResourceLock, namespace, "multiarch-operator-lock",
+		leClientSet.CoreV1(), leClientSet.CoordinationV1(), resourcelock.ResourceLockConfig{
+			Identity: id,
+		})
+	if err != nil {
+		setupLog.Error(err, "error creating leader election resource lock", "controller", id)
+		os.Exit(1)
+	}
+	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+		Lock:          rl,
+		LeaseDuration: 15 * time.Second,
+		RenewDeadline: 10 * time.Second,
+		RetryPeriod:   2 * time.Second,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(c context.Context) {
+				run(metricsAddr, probeAddr)
+			},
+			OnStoppedLeading: func() {
+				setupLog.Info("no longer the leader, staying inactive.", "controller", id)
+			},
+			OnNewLeader: func(current_id string) {
+				if current_id == id {
+					setupLog.Info("i am the new leader!", "controller", id)
+					return
+				}
+				setupLog.Info("new leader is", "controller", current_id)
+			},
+		},
+	})
+
+}
+
+func run(metricsAddr string, probeAddr string) {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		LeaderElection:         true,
 		LeaderElectionID:       "208d7abd.multiarch.openshift.io",
 		CertDir:                "/var/run/manager/tls",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
@@ -97,7 +153,6 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
 	config := ctrl.GetConfigOrDie()
 	clientset := kubernetes.NewForConfigOrDie(config)
 
