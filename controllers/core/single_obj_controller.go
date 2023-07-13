@@ -16,7 +16,7 @@ import (
 // and call the handler function when an event occurs.
 // The function is generic and takes two types T and L, where T is the type of the object to watch and L is the type of
 // the list of T objects to watch. The function also takes the name of the object the handler should subscribe to
-// and the namespace to watch.
+// and the namespace to watch (use an empty string for the namespace if the resource is cluster-scoped).
 // handler is a function that takes the event type and the object that was changed. Event types are defined in watch.go
 // and can be Added, Modified, Deleted, Bookmark and Error (not handled by handler).
 // errorHandler is an optional (nullable pointer to a) function executed when the event type is Error.
@@ -31,9 +31,11 @@ func NewSingleObjectEventHandler[T client.Object, L client.ObjectList](ctx conte
 		return err
 	}
 	list := reflect.New(reflect.TypeOf((*L)(nil)).Elem().Elem()).Interface().(L)
-	w, err := cli.Watch(ctx, list, &client.ListOptions{
-		Namespace: namespace,
-	})
+	lop := &client.ListOptions{}
+	if namespace != "" {
+		lop.Namespace = namespace
+	}
+	w, err := cli.Watch(ctx, list, lop)
 	if err != nil {
 		return err
 	}

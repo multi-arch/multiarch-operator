@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/klog/v2"
 	"multiarch-operator/controllers/core"
+	"multiarch-operator/pkg/system_config"
 	"os"
 	"sync"
 	"time"
@@ -43,9 +44,14 @@ func (i *registryInspector) GetCompatibleArchitecturesSet(ctx context.Context, i
 		klog.Warningf("Error parsing the image reference for the image %s: %v", imageReference, err)
 		return nil, err
 	}
-	src, err := ref.NewImageSource(ctx, &types.SystemContext{
-		AuthFilePath: authFile.Name(),
-	})
+	sys := &types.SystemContext{
+		AuthFilePath:                authFile.Name(),
+		SystemRegistriesConfPath:    system_config.RegistriesConfPath,
+		SystemRegistriesConfDirPath: system_config.RegistryCertsDir,
+		SignaturePolicyPath:         system_config.PolicyConfPath,
+		DockerPerHostCertDirPath:    system_config.DockerCertsDir,
+	}
+	src, err := ref.NewImageSource(ctx, sys)
 	if err != nil {
 		klog.Warningf("Error creating the image source: %v", err)
 		return nil, err
@@ -77,7 +83,6 @@ func (i *registryInspector) GetCompatibleArchitecturesSet(ctx context.Context, i
 		return supportedArchitectures, nil
 	} else {
 		klog.V(5).Infof("image %s is not a manifest list... getting the supported architecture", imageReference)
-		sys := &types.SystemContext{}
 		parsedImage, err := image.FromUnparsedImage(ctx, sys, image.UnparsedInstance(src, nil))
 		if err != nil {
 			klog.Warningf("Error parsing the manifest of the image %s: %v", imageReference, err)

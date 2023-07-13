@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"k8s.io/klog/v2"
+	"multiarch-operator/pkg/system_config"
 	"os"
 
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -131,6 +132,8 @@ func main() {
 	mgr.GetWebhookServer().Register("/add-pod-scheduling-gate", &webhook.Admission{Handler: &controllers.PodSchedulingGateMutatingWebHook{
 		Client: mgr.GetClient(),
 	}})
+
+	system_config.SystemConfigSyncerSingleton()
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
