@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/klog/v2"
 	"multiarch-operator/controllers/core"
+	"multiarch-operator/pkg/system_config"
 	"os"
 	"sync"
 	"time"
@@ -44,7 +45,11 @@ func (i *registryInspector) GetCompatibleArchitecturesSet(ctx context.Context, i
 		return nil, err
 	}
 	sys := &types.SystemContext{
-		AuthFilePath: authFile.Name(),
+		AuthFilePath:                authFile.Name(),
+		SystemRegistriesConfPath:    system_config.RegistriesConfPath,
+		SystemRegistriesConfDirPath: system_config.RegistryCertsDir,
+		SignaturePolicyPath:         system_config.PolicyConfPath,
+		DockerPerHostCertDirPath:    system_config.DockerCertsDir,
 	}
 	src, err := ref.NewImageSource(ctx, sys)
 	if err != nil {
